@@ -1,0 +1,301 @@
+import pandas as pd
+import PySimpleGUI as sg
+import os
+import getpass
+import re
+from babel.numbers import format_currency
+
+# ____________________ CRIAÇÃO DAS PLANILHAS ____________________
+def criar_tabela():
+    if not os.path.exists('login.xlsx'):
+        df = pd.DataFrame(columns=['Usuário', 'Senha'])
+        df.to_excel('login.xlsx', index=False)
+
+def criar_tabela_vendas():
+    if not os.path.exists('vendas.xlsx'):
+        df = pd.DataFrame(columns=['Cliente', 'Produto', 'Quantidade'])
+        df.to_excel('vendas.xlsx', index=False)
+
+def criar_tabela_produtos():
+    if not os.path.exists('produtos.xlsx'):
+        df = pd.DataFrame(columns=['Nome', 'Quantidade', 'Valor'])
+        df.to_excel('produtos.xlsx', index=False)
+
+def criar_tabela_clientes():
+    if not os.path.exists('clientes.xlsx'):
+        df = pd.DataFrame(columns=['Nome', 'Telefone'])
+        df.to_excel('clientes.xlsx', index=False)
+
+# ____________________ USUÁRIO ____________________
+def usuario_existe(usuario):
+    df = pd.read_excel('login.xlsx', dtype=str)
+    return any(df['Usuário'] == usuario)
+
+def cadastrar_usuario(usuario, senha):
+    if usuario_existe(usuario):
+        sg.popup("Nome de usuário já existe. Escolha outro.")
+        return
+    df = pd.read_excel('login.xlsx', dtype=str)
+    novo_registro = pd.DataFrame({'Usuário': [usuario], 'Senha': [senha]})
+    df = pd.concat([df, novo_registro], ignore_index=True)
+    df.to_excel('login.xlsx', index=False)
+    sg.popup("Usuário cadastrado com sucesso!")
+
+def realizar_login(usuario, senha):
+    df = pd.read_excel('login.xlsx', dtype=str)
+    if any((df['Usuário'] == usuario) & (df['Senha'] == senha)):
+        #janela_login.close()
+        mostrar_tela_home()
+    else:
+        sg.popup("Credenciais inválidas. Tente novamente.")
+
+# ____________________ PRODUTOS ____________________
+
+def cadastrar_produto(nome, quantidade, valor):
+    criar_tabela_produtos()
+
+    df_produtos = pd.read_excel('produtos.xlsx', dtype=str)
+
+    # Verifica se o produto já existe na planilha de produtos
+    if nome in df_produtos['Nome'].values:
+        # Se existir, atualiza a quantidade
+        idx_produto = df_produtos.index[df_produtos['Nome'] == nome].tolist()[0]
+        nova_quantidade = int(df_produtos.loc[idx_produto, 'Quantidade']) + int(quantidade)
+        df_produtos.at[idx_produto, 'Quantidade'] = str(nova_quantidade)
+        sg.popup(f"Quantidade do produto '{nome}' atualizada para {nova_quantidade}.")
+    else:
+        # Se não existir, adiciona um novo registro
+        novo_produto = pd.DataFrame({'Nome': [nome], 'Quantidade': [quantidade], 'Valor': [valor]})
+        df_produtos = pd.concat([df_produtos, novo_produto], ignore_index=True)
+        sg.popup(f"Produto '{nome}' cadastrado com sucesso!")
+
+    df_produtos.to_excel('produtos.xlsx', index=False)
+
+def cadastrar_produto_tela():
+    layout = [
+        [sg.Text('Página Cadastrar Produto')],
+        [sg.Text('Nome do Produto:'), sg.InputText(key='-NOME_PRODUTO-')],
+        [sg.Text('Quantidade:'), sg.InputText(key='-QUANTIDADE_PRODUTO-')],
+        [sg.Text('Valor:'), sg.InputText(key='-VALOR_PRODUTO-', enable_events=True, justification='right')],
+        [sg.Button('Cadastrar'), sg.Button('Cancelar')]
+    ]
+
+    janela = sg.Window('Cadastrar Produto', layout)
+
+    while True:
+        evento, valores = janela.read()
+
+        if evento == sg.WIN_CLOSED or evento == 'Cancelar':
+            break
+        elif evento == 'Cadastrar':
+            nome_produto = valores['-NOME_PRODUTO-']
+            quantidade_produto = valores['-QUANTIDADE_PRODUTO-']
+            valor_produto = valores['-VALOR_PRODUTO-']
+
+            if nome_produto == '' or quantidade_produto == '' or valor_produto == '':
+                sg.popup("Por favor, preencha todos os campos antes de cadastrar o produto.")
+            else:
+                # Verifica se a quantidade é maior ou igual a 1
+                if int(quantidade_produto) < 1:
+                    sg.popup("A quantidade do produto deve ser maior ou igual a 1.")
+                else:
+                    # Formata o valor como moeda
+                    valor_formatado = format_currency(float(valor_produto), 'BRL', locale='pt_BR')
+                    cadastrar_produto(nome_produto, quantidade_produto, valor_formatado)
+
+    janela.close()
+
+# ____________________ CLIENTES ____________________
+def validar_nome_cliente(nome):
+    # Verifica se o nome contém apenas letras e está em caixa alta
+    return bool(re.match("^[A-Z ]+$", nome))
+
+def validar_telefone(telefone):
+    # Verifica se o telefone está no formato desejado (XX) XXXXX-XXXX
+    return bool(re.match(r'^\(\d{2}\) \d{5}-\d{4}$', telefone))
+
+def cadastrar_cliente(nome, telefone):
+    criar_tabela_clientes()
+
+    df = pd.read_excel('clientes.xlsx', dtype=str)
+
+    # Verifica se o cliente já existe na planilha de clientes
+    if nome in df['Nome'].values:
+        sg.popup(f"Cliente '{nome}' já cadastrado.")
+        return
+
+    novo_cliente = pd.DataFrame({'Nome': [nome], 'Telefone': [telefone]})
+    df = pd.concat([df, novo_cliente], ignore_index=True)
+    df.to_excel('clientes.xlsx', index=False)
+    sg.popup(f"Cliente '{nome}' cadastrado com sucesso!")
+
+def cadastrar_cliente_tela():
+    layout = [
+        [sg.Text('Página Cadastrar Cliente')],
+        [sg.Text('Nome do Cliente:'), sg.InputText(key='-NOME_CLIENTE-', enable_events=True)],
+        [sg.Text('Telefone:'),
+         sg.InputText(key='-TELEFONE_CLIENTE-', enable_events=True, size=(15, 1), justification='center')],
+        [sg.Button('Cadastrar'), sg.Button('Cancelar')]
+    ]
+
+    janela = sg.Window('Cadastrar Cliente', layout)
+
+    while True:
+        evento, valores = janela.read()
+
+        if evento == sg.WIN_CLOSED or evento == 'Cancelar':
+            break
+        elif evento == '-NOME_CLIENTE-':
+            # Converte o nome do cliente para caixa alta e remove caracteres indesejados
+            valores['-NOME_CLIENTE-'] = valores['-NOME_CLIENTE-'].upper().strip()
+            janela['-NOME_CLIENTE-'].update(valores['-NOME_CLIENTE-'])
+        elif evento == '-TELEFONE_CLIENTE-':
+            # Adiciona a máscara de telefone (xx) xxxxx-xxxx
+            input_text = valores['-TELEFONE_CLIENTE-']
+            if len(input_text) == 2 and not input_text.endswith('('):
+                janela['-TELEFONE_CLIENTE-'].update(f"({input_text}) ")
+            elif len(input_text) == 10 and not input_text.endswith('-'):
+                janela['-TELEFONE_CLIENTE-'].update(f"{input_text}-")
+            elif len(input_text) == 15:
+                janela['-TELEFONE_CLIENTE-'].update(f"{input_text}")
+
+        elif evento == 'Cadastrar':
+            if valores['-NOME_CLIENTE-'] == '' or valores['-TELEFONE_CLIENTE-'] == '' or not validar_telefone(
+                    valores['-TELEFONE_CLIENTE-']):
+                sg.popup("Por favor, preencha todos os campos corretamente antes de cadastrar o cliente.")
+            else:
+                cadastrar_cliente(valores['-NOME_CLIENTE-'], valores['-TELEFONE_CLIENTE-'])
+
+    janela.close()
+
+# ____________________ VENDAS ____________________
+def cadastrar_venda(cliente, produto, quantidade):
+    criar_tabela_vendas()
+
+    df_produtos = pd.read_excel('produtos.xlsx', dtype=str)
+
+    # Encontra o índice do produto na planilha de produtos
+    idx_produto = df_produtos.index[df_produtos['Nome'] == produto].tolist()[0]
+
+    estoque_atual = int(df_produtos.loc[idx_produto, 'Quantidade'])
+
+    # Verifica se a quantidade em estoque é suficiente
+    if estoque_atual < int(quantidade):
+        sg.popup("Quantidade em estoque insuficiente. Venda não realizada.")
+        return
+
+    df_vendas = pd.read_excel('vendas.xlsx', dtype=str)
+    nova_venda = pd.DataFrame({'Cliente': [cliente], 'Produto': [produto], 'Quantidade': [quantidade]})
+    df_vendas = pd.concat([df_vendas, nova_venda], ignore_index=True)
+    df_vendas.to_excel('vendas.xlsx', index=False)
+
+    # Atualiza o estoque
+    atualizar_estoque(produto, quantidade)
+
+    sg.popup(f"Venda para o cliente '{cliente}' do produto '{produto}' cadastrada com sucesso!")
+
+def atualizar_estoque(produto, quantidade_vendida):
+    df_produtos = pd.read_excel('produtos.xlsx', dtype=str)
+
+    # Encontra o índice do produto na planilha de produtos
+    idx_produto = df_produtos.index[df_produtos['Nome'] == produto].tolist()[0]
+
+    # Deduz a quantidade vendida do estoque
+    estoque_atual = int(df_produtos.loc[idx_produto, 'Quantidade'])
+    novo_estoque = estoque_atual - int(quantidade_vendida)
+
+    # Verifica se o estoque fica negativo
+    novo_estoque = max(novo_estoque, 0)
+
+    # Atualiza o valor na planilha de produtos
+    df_produtos.at[idx_produto, 'Quantidade'] = str(novo_estoque)
+    df_produtos.to_excel('produtos.xlsx', index=False)
+
+def cadastrar_venda_tela():
+    # Carrega a lista de clientes e produtos
+    clientes = pd.read_excel('clientes.xlsx')['Nome'].tolist()
+    produtos = pd.read_excel('produtos.xlsx')['Nome'].tolist()
+
+    layout = [
+        [sg.Text('Página Cadastrar Venda')],
+        [sg.Text('Cliente:'), sg.Combo(clientes, key='-CLIENTE_VENDA-', enable_events=True)],
+        [sg.Text('Produto:'), sg.Combo(produtos, key='-PRODUTO_VENDA-', enable_events=True)],
+        [sg.Text('Quantidade:'), sg.InputText(key='-QUANTIDADE_VENDA-', enable_events=True)],
+        [sg.Button('Cadastrar'), sg.Button('Cancelar')]
+    ]
+
+    janela = sg.Window('Cadastrar Venda', layout)
+
+    while True:
+        evento, valores = janela.read()
+
+        if evento == sg.WIN_CLOSED or evento == 'Cancelar':
+            break
+        elif evento == 'Cadastrar':
+            if valores['-CLIENTE_VENDA-'] == '' or valores['-PRODUTO_VENDA-'] == '' or valores[
+                '-QUANTIDADE_VENDA-'] == '':
+                sg.popup("Por favor, preencha todos os campos antes de cadastrar a venda.")
+            else:
+                cadastrar_venda(valores['-CLIENTE_VENDA-'], valores['-PRODUTO_VENDA-'], valores['-QUANTIDADE_VENDA-'])
+
+    janela.close()
+
+
+# ____________________ HOME ____________________
+def mostrar_tela_home():
+    layout_home = [
+        [sg.Text('Bem-vindo à Tela Home')],
+        [sg.Button('Produtos'), sg.Button('Clientes'), sg.Button('Vendas')]
+    ]
+
+    janela_home = sg.Window('Tela Home', layout_home)
+
+    while True:
+        evento, valores = janela_home.read()
+
+        if evento == sg.WIN_CLOSED:
+            break
+        elif evento == 'Produtos':
+            cadastrar_produto_tela()
+        elif evento == 'Clientes':
+            cadastrar_cliente_tela()
+        elif evento == 'Vendas':
+            cadastrar_venda_tela()
+
+    janela_home.close()
+
+
+
+# ____________________ MAIN ____________________
+def main():
+    criar_tabela_produtos()
+
+    layout_cadastro = [
+        [sg.Text('Nome de Usuário:'), sg.InputText(key='-USUARIO_CAD-')],
+        [sg.Text('Senha:'), sg.InputText(key='-SENHA_CAD-', password_char='*')],
+        [sg.Button('Cadastrar'), sg.Button('Cancelar')]
+    ]
+
+    layout_login = [
+        [sg.Text('Nome de Usuário:'), sg.InputText(key='-USUARIO_LOGIN-')],
+        [sg.Text('Senha:'), sg.InputText(key='-SENHA_LOGIN-', password_char='*')],
+        [sg.Button('Login', bind_return_key=True), sg.Button('Cancelar')]
+    ]
+
+    janela_login = sg.Window('Tela de Login', layout_login)
+
+    while True:
+        evento, valores = janela_login.read()
+
+        if evento == sg.WIN_CLOSED or evento == 'Cancelar':
+            break
+        elif evento == 'Cadastrar':
+            cadastrar_usuario(valores['-USUARIO_CAD-'], valores['-SENHA_CAD-'])
+        elif evento == 'Login':
+            realizar_login(valores['-USUARIO_LOGIN-'], valores['-SENHA_LOGIN-'])
+            break
+
+    janela_login.close()
+
+if __name__ == "__main__":
+    main()
